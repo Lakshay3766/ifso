@@ -1,2 +1,10 @@
-pymongo==4.6.0
-tk
+# Core dependencies
+# Note: tkinter must be installed via system package manager
+# macOS: brew install python-tk
+# Ubuntu/Debian: sudo apt-get install python3-tk
+# Windows: comes with Python by default
+
+# Optional dependencies for future enhancements
+# pymongo==4.6.0  # If MongoDB support is needed
+# pandas==2.0.0  # For advanced data analysis
+# matplotlib==3.7.0  # For charts and graphs

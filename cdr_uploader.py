@@ -1,224 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    main()if __name__ == '__main__':    root.mainloop()    app = CDRUploaderGUI(root)    root = tk.Tk()def main():            self.log_message("=" * 60)            self.is_uploading = False            self.upload_btn.config(state='normal')            self.progress_bar.stop()        finally:                    messagebox.showerror("Error", error_msg)            self.status_label.config(text="Upload failed with error!")            self.log_message(error_msg)            error_msg = f"Error: {str(e)}"        except Exception as e:                        messagebox.showerror("Error", message)                self.status_label.config(text="Upload failed!")            else:                messagebox.showinfo("Success", message)                self.status_label.config(text="Upload completed successfully!")            if success:                        self.log_message(message)                        )                mongo_port=self.mongo_port.get()                mongo_host=self.mongo_host.get(),                self.csv_file_path.get(),            success, message = upload_csv_to_mongodb(        try:                self.log_message("-" * 60)        self.log_message(f"MongoDB: {self.mongo_host.get()}:{self.mongo_port.get()}")        self.log_message(f"File: {self.csv_file_path.get()}")        self.log_message(f"Starting upload process...")        self.log_message("=" * 60)                self.status_label.config(text="Uploading...")        self.progress_bar.start(10)        self.upload_btn.config(state='disabled')        self.is_uploading = True    def upload_data(self):            upload_thread.start()        upload_thread.daemon = True        upload_thread = threading.Thread(target=self.upload_data)        # Start upload in a separate thread                    return            messagebox.showerror("Error", "Please enter a valid port number (1-65535)!")        except:                raise ValueError()            if port <= 0 or port > 65535:            port = self.mongo_port.get()        try:                    return            messagebox.showerror("Error", "Please enter MongoDB host!")        if not self.mongo_host.get():                    return            messagebox.showerror("Error", "Please select a CSV file!")        if not self.csv_file_path.get():        # Validate inputs                    return            messagebox.showwarning("Upload in Progress", "An upload is already in progress!")        if self.is_uploading:    def start_upload(self):            self.log_text.delete(1.0, tk.END)    def clear_log(self):            self.log_text.see(tk.END)        self.log_text.insert(tk.END, f"{message}\n")    def log_message(self, message):                self.log_message(f"Selected file: {filename}")            self.csv_file_path.set(filename)        if filename:        )            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]            title="Select CSV File",        filename = filedialog.askopenfilename(    def browse_file(self):            clear_log_btn.pack(pady=(5, 0))        )            width=15            command=self.clear_log,            text="Clear Log",            log_frame,        clear_log_btn = ttk.Button(        # Clear Log Button                self.log_text.pack(fill=tk.BOTH, expand=True)        )            font=("Courier", 9)            wrap=tk.WORD,            width=75,            height=10,            log_frame,        self.log_text = scrolledtext.ScrolledText(                log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))        log_frame = ttk.LabelFrame(main_frame, text="Upload Log", padding="10")        # Log Section                self.status_label.pack(pady=5)        )            font=("Helvetica", 10)            text="Ready to upload",             main_frame,         self.status_label = ttk.Label(        # Status Label                self.progress_bar.pack()        )            length=660            mode='indeterminate',            progress_frame,         self.progress_bar = ttk.Progressbar(                progress_frame.pack(fill=tk.X, pady=(0, 10))        progress_frame = ttk.Frame(main_frame)        # Progress Frame                self.upload_btn.pack(pady=15)        )            style='Accent.TButton'            width=25,            command=self.start_upload,            text="Upload to MongoDB",            main_frame,        self.upload_btn = ttk.Button(        # Upload Button                browse_btn.pack(side=tk.LEFT, padx=5)        )            width=10            command=self.browse_file,            text="Browse",             file_path_frame,         browse_btn = ttk.Button(                file_entry.pack(side=tk.LEFT, padx=5)        file_entry = ttk.Entry(file_path_frame, textvariable=self.csv_file_path, width=35)        ttk.Label(file_path_frame, text="File:", width=12).pack(side=tk.LEFT)                file_path_frame.pack(fill=tk.X, pady=5)        file_path_frame = ttk.Frame(file_frame)                file_frame.pack(fill=tk.X, pady=(0, 15))        file_frame = ttk.LabelFrame(main_frame, text="CSV File Selection", padding="15")        # File Selection Section                port_entry.pack(side=tk.LEFT, padx=5)        port_entry = ttk.Entry(port_frame, textvariable=self.mongo_port, width=30)        ttk.Label(port_frame, text="Port:", width=12).pack(side=tk.LEFT)        port_frame.pack(fill=tk.X, pady=5)        port_frame = ttk.Frame(config_frame)        # Port                host_entry.pack(side=tk.LEFT, padx=5)        host_entry = ttk.Entry(host_frame, textvariable=self.mongo_host, width=30)        ttk.Label(host_frame, text="Host:", width=12).pack(side=tk.LEFT)        host_frame.pack(fill=tk.X, pady=5)        host_frame = ttk.Frame(config_frame)        # Host                config_frame.pack(fill=tk.X, pady=(0, 15))        config_frame = ttk.LabelFrame(main_frame, text="MongoDB Configuration", padding="15")        # MongoDB Configuration Section                title_label.pack(pady=(0, 20))        )            font=("Helvetica", 18, "bold")            text="CDR MongoDB Uploader",             main_frame,         title_label = ttk.Label(        # Title                main_frame.pack(fill=tk.BOTH, expand=True)        main_frame = ttk.Frame(self.root, padding="20")        # Main frame    def create_widgets(self):            self.create_widgets()                self.is_uploading = False        self.mongo_port = tk.IntVar(value=27017)        self.mongo_host = tk.StringVar(value="localhost")        self.csv_file_path = tk.StringVar()        # Variables                style.theme_use('clam')        style = ttk.Style()        # Configure style                self.root.resizable(False, False)        self.root.geometry("700x600")        self.root.title("CDR MongoDB Uploader")        self.root = root    def __init__(self, root):class CDRUploaderGUI:from cdr_uploader import upload_csv_to_mongodbimport threadingfrom tkinter import ttk, filedialog, messagebox, scrolledtextimport csv
-from pymongo import MongoClient
+import csv
+import sqlite3
 from datetime import datetime
 import os
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+import threading
 
 def parse_lat_long(lat_long_str):
     if lat_long_str and lat_long_str != '---':
@@ -229,19 +17,46 @@ def parse_lat_long(lat_long_str):
             return None, None
     return None, None
 
-def upload_csv_to_mongodb(csv_file_path, mongo_host='localhost', mongo_port=27017):
+def upload_csv_to_sqlite(csv_file_path, db_path='cdr_database.db'):
+    conn = None
     try:
-        # Connect to local MongoDB
-        client = MongoClient(
-            host=mongo_host,
-            port=mongo_port,
-            serverSelectionTimeoutMS=5000
-        )
-        # Test connection
-        client.admin.command('ping')
+        # Connect to SQLite database
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
         
-        db = client['cdr_database']  # Database name
-        collection = db['cdrs']  # Collection name
+        # Create table if it doesn't exist
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cdrs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_no TEXT,
+            call_type TEXT,
+            toc TEXT,
+            b_party_no TEXT,
+            lrn_no TEXT,
+            lrn_tsp_lsa TEXT,
+            datetime TIMESTAMP,
+            duration_seconds INTEGER,
+            first_cgi_lat REAL,
+            first_cgi_long REAL,
+            first_cgi TEXT,
+            last_cgi_lat REAL,
+            last_cgi_long REAL,
+            last_cgi TEXT,
+            smsc_no TEXT,
+            service_type TEXT,
+            imei TEXT,
+            imsi TEXT,
+            call_fow_no TEXT,
+            roam_nw TEXT,
+            sw_msc_id TEXT,
+            in_tg TEXT,
+            out_tg TEXT,
+            vowifi_first_ue_ip TEXT,
+            port1 TEXT,
+            vowifi_last_ue_ip TEXT,
+            port2 TEXT
+        )
+        ''')
         
         # Read CSV file
         with open(csv_file_path, 'r', newline='', encoding='utf-8') as csvfile:
@@ -334,30 +149,241 @@ def upload_csv_to_mongodb(csv_file_path, mongo_host='localhost', mongo_port=2701
                 records.append(parsed_record)
         
         if records:
-            # Insert records into MongoDB
-            result = collection.insert_many(records)
-            message = f"Successfully inserted {len(result.inserted_ids)} records into MongoDB."
+            # Insert records into SQLite
+            insert_query = '''
+            INSERT INTO cdrs (target_no, call_type, toc, b_party_no, lrn_no, lrn_tsp_lsa, 
+                            datetime, duration_seconds, first_cgi_lat, first_cgi_long, first_cgi,
+                            last_cgi_lat, last_cgi_long, last_cgi, smsc_no, service_type,
+                            imei, imsi, call_fow_no, roam_nw, sw_msc_id, in_tg, out_tg,
+                            vowifi_first_ue_ip, port1, vowifi_last_ue_ip, port2)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            '''
+            
+            for record in records:
+                cursor.execute(insert_query, (
+                    record['target_no'], record['call_type'], record['toc'], 
+                    record['b_party_no'], record['lrn_no'], record['lrn_tsp_lsa'],
+                    record['datetime'], record['duration_seconds'], 
+                    record['first_cgi_lat'], record['first_cgi_long'], record['first_cgi'],
+                    record['last_cgi_lat'], record['last_cgi_long'], record['last_cgi'],
+                    record['smsc_no'], record['service_type'], record['imei'], record['imsi'],
+                    record['call_fow_no'], record['roam_nw'], record['sw_msc_id'],
+                    record['in_tg'], record['out_tg'], record['vowifi_first_ue_ip'],
+                    record['port1'], record['vowifi_last_ue_ip'], record['port2']
+                ))
+            
+            conn.commit()
+            message = f"Successfully inserted {len(records)} records into SQLite database."
             print(message)
             return True, message
         else:
             message = "No records found in the CSV file."
             print(message)
             return False, message
-        
-        # Close connection
-        client.close()
     
     except Exception as e:
         error_msg = f"An error occurred: {e}"
         print(error_msg)
         return False, error_msg
+    finally:
+        if conn:
+            conn.close()
+
+
+class CDRUploaderGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("CDR SQLite Uploader")
+        self.root.geometry("700x600")
+        self.root.resizable(False, False)
+        
+        # Configure style
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Variables
+        self.csv_file_path = tk.StringVar()
+        self.db_path = tk.StringVar(value="cdr_database.db")
+        self.is_uploading = False
+        
+        self.create_widgets()
+
+    def create_widgets(self):
+        # Main frame
+        main_frame = ttk.Frame(self.root, padding="20")
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Title
+        title_label = ttk.Label(
+            main_frame,
+            text="CDR SQLite Uploader",
+            font=("Helvetica", 18, "bold")
+        )
+        title_label.pack(pady=(0, 20))
+        
+        # SQLite Configuration Section
+        config_frame = ttk.LabelFrame(main_frame, text="SQLite Configuration", padding="15")
+        config_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        # Database Path
+        db_path_frame = ttk.Frame(config_frame)
+        db_path_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(db_path_frame, text="DB Path:", width=12).pack(side=tk.LEFT)
+        db_entry = ttk.Entry(db_path_frame, textvariable=self.db_path, width=30)
+        db_entry.pack(side=tk.LEFT, padx=5)
+        
+        # File Selection Section
+        file_frame = ttk.LabelFrame(main_frame, text="CSV File Selection", padding="15")
+        file_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        file_path_frame = ttk.Frame(file_frame)
+        file_path_frame.pack(fill=tk.X, pady=5)
+        ttk.Label(file_path_frame, text="File:", width=12).pack(side=tk.LEFT)
+        file_entry = ttk.Entry(file_path_frame, textvariable=self.csv_file_path, width=35)
+        file_entry.pack(side=tk.LEFT, padx=5)
+        browse_btn = ttk.Button(
+            file_path_frame,
+            text="Browse",
+            width=10,
+            command=self.browse_file,
+        )
+        browse_btn.pack(side=tk.LEFT, padx=5)
+        
+        # Upload Button
+        self.upload_btn = ttk.Button(
+            main_frame,
+            text="Upload to SQLite",
+            width=25,
+            command=self.start_upload,
+            style='Accent.TButton'
+        )
+        self.upload_btn.pack(pady=15)
+        
+        # Progress Frame
+        progress_frame = ttk.Frame(main_frame)
+        progress_frame.pack(fill=tk.X, pady=(0, 10))
+        self.progress_bar = ttk.Progressbar(
+            progress_frame,
+            mode='indeterminate',
+            length=660
+        )
+        self.progress_bar.pack()
+        
+        # Status Label
+        self.status_label = ttk.Label(
+            main_frame,
+            text="Ready to upload",
+            font=("Helvetica", 10)
+        )
+        self.status_label.pack(pady=5)
+        
+        # Log Section
+        log_frame = ttk.LabelFrame(main_frame, text="Upload Log", padding="10")
+        log_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        
+        self.log_text = scrolledtext.ScrolledText(
+            log_frame,
+            height=10,
+            width=75,
+            wrap=tk.WORD,
+            font=("Courier", 9)
+        )
+        self.log_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Clear Log Button
+        clear_log_btn = ttk.Button(
+            log_frame,
+            text="Clear Log",
+            command=self.clear_log,
+            width=15
+        )
+        clear_log_btn.pack(pady=(5, 0))
+
+    def browse_file(self):
+        filename = filedialog.askopenfilename(
+            title="Select CSV File",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if filename:
+            self.csv_file_path.set(filename)
+            self.log_message(f"Selected file: {filename}")
+
+    def log_message(self, message):
+        self.log_text.insert(tk.END, f"{message}\n")
+        self.log_text.see(tk.END)
+
+    def clear_log(self):
+        self.log_text.delete(1.0, tk.END)
+
+    def start_upload(self):
+        # Validate inputs
+        if self.is_uploading:
+            messagebox.showwarning("Upload in Progress", "An upload is already in progress!")
+            return
+        
+        if not self.csv_file_path.get():
+            messagebox.showerror("Error", "Please select a CSV file!")
+            return
+        
+        if not self.db_path.get():
+            messagebox.showerror("Error", "Please enter a database path!")
+            return
+        
+        # Start upload in a separate thread
+        self.is_uploading = True
+        upload_thread = threading.Thread(target=self.upload_data)
+        upload_thread.daemon = True
+        upload_thread.start()
+
+    def upload_data(self):
+        try:
+            self.upload_btn.config(state='disabled')
+            self.progress_bar.start(10)
+            self.status_label.config(text="Uploading...")
+            
+            self.log_message("=" * 60)
+            self.log_message(f"Starting upload process...")
+            self.log_message(f"File: {self.csv_file_path.get()}")
+            self.log_message(f"Database: {self.db_path.get()}")
+            self.log_message("-" * 60)
+            
+            success, message = upload_csv_to_sqlite(
+                self.csv_file_path.get(),
+                db_path=self.db_path.get()
+            )
+            
+            self.log_message(message)
+            
+            if success:
+                self.status_label.config(text="Upload completed successfully!")
+                messagebox.showinfo("Success", message)
+            else:
+                self.status_label.config(text="Upload failed!")
+                messagebox.showerror("Error", message)
+        
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            self.log_message(error_msg)
+            self.status_label.config(text="Upload failed with error!")
+            messagebox.showerror("Error", error_msg)
+        
+        finally:
+            self.progress_bar.stop()
+            self.upload_btn.config(state='normal')
+            self.is_uploading = False
+            self.log_message("=" * 60)
+
 
 def main():
-    parser = argparse.ArgumentParser(description='Upload CSV data to MongoDB')
+    parser = argparse.ArgumentParser(description='Upload CSV data to SQLite')
     parser.add_argument('csv_file', help='Path to the CSV file')
+    parser.add_argument('--db', default='cdr_database.db', help='Path to SQLite database file')
     args = parser.parse_args()
     
-    upload_csv_to_mongodb(args.csv_file)
+    upload_csv_to_sqlite(args.csv_file, db_path=args.db)
+
 
 if __name__ == '__main__':
-    main()
+    root = tk.Tk()
+    app = CDRUploaderGUI(root)
+    root.mainloop()
