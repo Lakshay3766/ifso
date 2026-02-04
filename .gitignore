@@ -1,0 +1,25 @@
+# Environment
+.env
+.venv
+env/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OSw 
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
