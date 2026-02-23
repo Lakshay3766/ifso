@@ -1,0 +1,2128 @@
+#!/usr/bin/env python3
+"""
+CDR Analysis Tool - Main Window
+Main application window with all analysis features
+"""
+
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox, scrolledtext
+import csv
+import threading
+import sys
+import os
+from typing import Any, Dict, List, Optional, Tuple
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from database.db_manager import DatabaseManager
+from database.csv_importer import CSVImporter
+
+
+class CDRAnalysisTool:
+    """Main CDR Analysis and Investigation Tool"""
+    
+    def __init__(self, root):
+        """
+        Initialize the CDR Analysis Tool
+        
+        Args:
+            root: Tkinter root window
+        """
+        self.root = root
+        self.root.title("CDR Analysis & Investigation - February 2025 - Licensed to Manoj Dube 9819194961")
+        self.root.geometry("1400x800")
+        self.root.resizable(True, True)
+
+        try:
+            style = ttk.Style()
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        data_dir = os.path.join(project_root, "data")
+        os.makedirs(data_dir, exist_ok=True)
+        self.db_path = os.path.join(data_dir, "cdr_database.db")
+        self.db_manager = DatabaseManager(self.db_path)
+
+        self._sort_reverse = {}
+
+        self._search_page = 0
+        self._search_total = 0
+        self._search_last_filters = {}
+
+        self._db_page = 0
+        self._db_total = 0
+
+        self._is_importing = False
+        
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Setup the user interface"""
+        # Menu bar
+        menubar = tk.Menu(self.root)
+        self.root.config(menu=menubar)
+        
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Upload CSV", command=self.upload_csv)
+        file_menu.add_command(label="Change Database", command=self.change_database)
+        file_menu.add_command(label="Refresh", command=self.refresh_ui)
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.quit)
+
+        self.main_container = ttk.Frame(self.root)
+        self.main_container.pack(fill=tk.BOTH, expand=True)
+
+        self.status_var = tk.StringVar(value=f"DB: {self.db_path}")
+        status_bar = ttk.Label(self.main_container, textvariable=self.status_var, anchor=tk.W)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=2)
+        
+        # Notebook (tabs)
+        self.notebook = ttk.Notebook(self.main_container)
+        self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # Create tabs
+        self.home_frame = ttk.Frame(self.notebook)
+        self.search_frame = ttk.Frame(self.notebook)
+        self.normal_cdr_frame = ttk.Frame(self.notebook)
+        self.tower_cdr_frame = ttk.Frame(self.notebook)
+        self.groups_frame = ttk.Frame(self.notebook)
+        self.reports_frame = ttk.Frame(self.notebook)
+        self.database_frame = ttk.Frame(self.notebook)
+        
+        self.notebook.add(self.home_frame, text="Home")
+        self.notebook.add(self.search_frame, text="Search")
+        self.notebook.add(self.normal_cdr_frame, text="Investigation")
+        self.notebook.add(self.tower_cdr_frame, text="Tower/CGI")
+        self.notebook.add(self.groups_frame, text="Groups")
+        self.notebook.add(self.reports_frame, text="Reports")
+        self.notebook.add(self.database_frame, text="Database")
+        
+        self.create_home_tab()
+        self.create_search_tab()
+        self.create_normal_cdr_tab()
+        self.create_tower_cdr_tab()
+        self.create_groups_tab()
+        self.create_reports_tab()
+        self.create_database_tab()
+
+        self.refresh_ui()
+    
+    def create_home_tab(self):
+        """Create home tab"""
+        frame = ttk.Frame(self.home_frame, padding="20")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        title = ttk.Label(frame, text="CDR Analysis & Investigation Tool", 
+                         font=("Helvetica", 18, "bold"))
+        title.pack(pady=20)
+        
+        # Quick actions
+        actions_frame = ttk.LabelFrame(frame, text="Quick Actions", padding="15")
+        actions_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(actions_frame, text="Upload CSV File", 
+                  command=self.upload_csv, width=20).pack(side=tk.LEFT, padx=5, pady=10)
+        ttk.Button(actions_frame, text="View Database", 
+                  command=lambda: self.notebook.select(self.database_frame), 
+                  width=20).pack(side=tk.LEFT, padx=5, pady=10)
+        ttk.Button(actions_frame, text="Search Records", 
+                  command=lambda: self.notebook.select(self.search_frame), 
+                  width=20).pack(side=tk.LEFT, padx=5, pady=10)
+        
+        # Information
+        info_text = scrolledtext.ScrolledText(frame, height=20, width=100, wrap=tk.WORD)
+        info_text.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        info = """
+Welcome to CDR Analysis & Investigation Tool
+
+This application provides comprehensive analysis of Call Data Records (CDR) for investigative purposes.
+
+Key Features:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 Data Management:
+   • Upload CSV files directly to SQLite database
+   • Support for Normal CDR and Tower CDR data
+   • Automatic data parsing and validation
+   • Export data to CSV format
+
+🔍 Search & Filter:
+   • Search by A Party (Caller) and B Party (Receiver)
+   • Filter by date, time, IMEI, IMSI
+   • Advanced search with multiple criteria
+   • Quick result visualization
+
+👥 Group Analysis:
+   • Analyze common and uncommon numbers
+   • Track number combinations (A+B)
+   • IMEI-based grouping and analysis
+   • Call type and service type statistics
+
+📈 Reports & Analytics:
+   • Max call duration analysis
+   • Most used IMEI reports
+   • Call statistics and patterns
+   • Location-based analysis (CGI data)
+
+🗄️ Database Operations:
+   • View all records with pagination
+   • Clear database functionality
+   • Export filtered data
+   • Database statistics
+
+Quick Start Guide:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Click "Upload CSV File" or go to File → Upload CSV
+2. Select your CDR CSV file
+3. Wait for the upload to complete
+4. Use the "Search" tab to find specific records
+5. Use "Groups" tab to analyze call patterns
+6. Generate reports from the "Reports" tab
+
+Supported CSV Format:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+The CSV should contain columns like:
+• Target No, Call Type, TOC
+• B Party No, LRN No, LRN TSP-LSA
+• Date, Time, Dur(s)
+• First CGI, Last CGI
+• IMEI, IMSI, Service Type
+• And other telecom metadata
+
+The tool will automatically detect the header row and import data accordingly.
+
+For any issues or support, please contact the system administrator.
+        """
+        
+        info_text.insert(1.0, info)
+        info_text.config(state=tk.DISABLED)
+    
+    def create_search_tab(self):
+        """Create search tab"""
+        frame = ttk.Frame(self.search_frame, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        self.search_call_type_var = tk.StringVar()
+        self.search_service_type_var = tk.StringVar()
+        self.search_limit_var = tk.StringVar(value="500")
+        self.search_page_var = tk.StringVar(value="Page 1")
+        self.search_total_var = tk.StringVar(value="0 results")
+
+        # Search controls
+        search_frame = ttk.LabelFrame(frame, text="Search Filters", padding="10")
+        search_frame.pack(fill=tk.X, pady=5)
+
+        ttk.Label(search_frame, text="A Party:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.search_a_party = ttk.Entry(search_frame, width=18)
+        self.search_a_party.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="B Party:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.search_b_party = ttk.Entry(search_frame, width=18)
+        self.search_b_party.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Call Type:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.search_call_type = ttk.Combobox(
+            search_frame,
+            width=16,
+            textvariable=self.search_call_type_var,
+            values=[""],
+            state="readonly",
+        )
+        self.search_call_type.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Service Type:").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        self.search_service_type = ttk.Combobox(
+            search_frame,
+            width=16,
+            textvariable=self.search_service_type_var,
+            values=[""],
+            state="readonly",
+        )
+        self.search_service_type.grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Date From:").grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.search_date_from = ttk.Entry(search_frame, width=18)
+        self.search_date_from.grid(row=1, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Date To:").grid(row=1, column=2, padx=5, pady=5, sticky=tk.W)
+        self.search_date_to = ttk.Entry(search_frame, width=18)
+        self.search_date_to.grid(row=1, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Time From:").grid(row=1, column=4, padx=5, pady=5, sticky=tk.W)
+        self.search_time_from = ttk.Entry(search_frame, width=16)
+        self.search_time_from.grid(row=1, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Time To:").grid(row=1, column=6, padx=5, pady=5, sticky=tk.W)
+        self.search_time_to = ttk.Entry(search_frame, width=16)
+        self.search_time_to.grid(row=1, column=7, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="IMEI:").grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+        self.search_imei = ttk.Entry(search_frame, width=18)
+        self.search_imei.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="IMSI:").grid(row=2, column=2, padx=5, pady=5, sticky=tk.W)
+        self.search_imsi = ttk.Entry(search_frame, width=18)
+        self.search_imsi.grid(row=2, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Dur Min:").grid(row=2, column=4, padx=5, pady=5, sticky=tk.W)
+        self.search_dur_min = ttk.Entry(search_frame, width=16)
+        self.search_dur_min.grid(row=2, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Dur Max:").grid(row=2, column=6, padx=5, pady=5, sticky=tk.W)
+        self.search_dur_max = ttk.Entry(search_frame, width=16)
+        self.search_dur_max.grid(row=2, column=7, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="CGI:").grid(row=3, column=0, padx=5, pady=5, sticky=tk.W)
+        self.search_cgi = ttk.Entry(search_frame, width=18)
+        self.search_cgi.grid(row=3, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, text="Limit:").grid(row=3, column=2, padx=5, pady=5, sticky=tk.W)
+        self.search_limit = ttk.Entry(search_frame, width=8, textvariable=self.search_limit_var)
+        self.search_limit.grid(row=3, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(search_frame, textvariable=self.search_page_var).grid(row=3, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(search_frame, textvariable=self.search_total_var).grid(row=3, column=5, padx=5, pady=5, sticky=tk.W)
+
+        button_frame = ttk.Frame(search_frame)
+        button_frame.grid(row=4, column=0, columnspan=8, pady=10, sticky=tk.W)
+        ttk.Button(button_frame, text="Search", command=self.search_records).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Clear", command=self.clear_search).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Results", command=self.export_search_results).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Prev", command=self.search_prev_page).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Next", command=self.search_next_page).pack(side=tk.LEFT, padx=5)
+
+        paned = ttk.PanedWindow(frame, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        # Results table
+        table_frame = ttk.LabelFrame(paned, text="Search Results", padding="10")
+        details_frame = ttk.LabelFrame(paned, text="Record Details", padding="10")
+        paned.add(table_frame, weight=4)
+        paned.add(details_frame, weight=2)
+
+        vsb = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
+        hsb = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL)
+        self.search_tree = ttk.Treeview(
+            table_frame,
+            columns=(
+                "A_PARTY",
+                "B_PARTY",
+                "DATE",
+                "TIME",
+                "DURATION",
+                "CALL_TYPE",
+                "SERVICE_TYPE",
+                "IMEI",
+                "IMSI",
+                "FIRST_CGI",
+                "LAST_CGI",
+            ),
+            yscrollcommand=vsb.set,
+            xscrollcommand=hsb.set,
+        )
+        vsb.config(command=self.search_tree.yview)
+        hsb.config(command=self.search_tree.xview)
+
+        self.search_tree.column("#0", width=80, minwidth=80)
+        self.search_tree.column("A_PARTY", width=140, minwidth=120)
+        self.search_tree.column("B_PARTY", width=140, minwidth=120)
+        self.search_tree.column("DATE", width=100, minwidth=100)
+        self.search_tree.column("TIME", width=90, minwidth=90)
+        self.search_tree.column("DURATION", width=90, minwidth=80)
+        self.search_tree.column("CALL_TYPE", width=120, minwidth=100)
+        self.search_tree.column("SERVICE_TYPE", width=140, minwidth=120)
+        self.search_tree.column("IMEI", width=160, minwidth=140)
+        self.search_tree.column("IMSI", width=160, minwidth=140)
+        self.search_tree.column("FIRST_CGI", width=140, minwidth=120)
+        self.search_tree.column("LAST_CGI", width=140, minwidth=120)
+
+        self._set_tree_heading(self.search_tree, "#0", "ID")
+        self._set_tree_heading(self.search_tree, "A_PARTY", "A Party")
+        self._set_tree_heading(self.search_tree, "B_PARTY", "B Party")
+        self._set_tree_heading(self.search_tree, "DATE", "Date")
+        self._set_tree_heading(self.search_tree, "TIME", "Time")
+        self._set_tree_heading(self.search_tree, "DURATION", "Dur(s)")
+        self._set_tree_heading(self.search_tree, "CALL_TYPE", "Call Type")
+        self._set_tree_heading(self.search_tree, "SERVICE_TYPE", "Service Type")
+        self._set_tree_heading(self.search_tree, "IMEI", "IMEI")
+        self._set_tree_heading(self.search_tree, "IMSI", "IMSI")
+        self._set_tree_heading(self.search_tree, "FIRST_CGI", "First CGI")
+        self._set_tree_heading(self.search_tree, "LAST_CGI", "Last CGI")
+
+        self.search_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        vsb.grid(row=0, column=1, sticky=tk.NS)
+        hsb.grid(row=1, column=0, sticky=tk.EW)
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+
+        self.search_tree.bind("<<TreeviewSelect>>", self.on_search_select)
+        self.search_tree.bind("<Button-3>", lambda e: self.show_record_context_menu(e, self.search_tree))
+        self.search_tree.bind("<Control-Button-1>", lambda e: self.show_record_context_menu(e, self.search_tree))
+
+        details_vsb = ttk.Scrollbar(details_frame, orient=tk.VERTICAL)
+        self.search_details_tree = ttk.Treeview(
+            details_frame,
+            columns=("VALUE",),
+            show="tree headings",
+            yscrollcommand=details_vsb.set,
+        )
+        details_vsb.config(command=self.search_details_tree.yview)
+
+        self.search_details_tree.column("#0", width=150, minwidth=120)
+        self.search_details_tree.column("VALUE", width=360, minwidth=200)
+        self.search_details_tree.heading("#0", text="Field", anchor=tk.W)
+        self.search_details_tree.heading("VALUE", text="Value", anchor=tk.W)
+
+        self.search_details_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        details_vsb.grid(row=0, column=1, sticky=tk.NS)
+        details_frame.columnconfigure(0, weight=1)
+        details_frame.rowconfigure(0, weight=1)
+    
+    def create_normal_cdr_tab(self):
+        """Create Investigation tab"""
+        frame = ttk.Frame(self.normal_cdr_frame, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        title = ttk.Label(frame, text="Investigation & Link Analysis", font=("Helvetica", 14, "bold"))
+        title.pack(pady=10)
+
+        nb = ttk.Notebook(frame)
+        self.inv_notebook = nb
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        contacts_frame = ttk.Frame(nb, padding="10")
+        mutual_frame = ttk.Frame(nb, padding="10")
+        link_frame = ttk.Frame(nb, padding="10")
+        timeline_frame = ttk.Frame(nb, padding="10")
+        imei_frame = ttk.Frame(nb, padding="10")
+
+        self.inv_tab_contacts = contacts_frame
+        self.inv_tab_mutual = mutual_frame
+        self.inv_tab_link = link_frame
+        self.inv_tab_timeline = timeline_frame
+        self.inv_tab_imei = imei_frame
+
+        nb.add(contacts_frame, text="Top Contacts")
+        nb.add(mutual_frame, text="Mutual Contacts")
+        nb.add(link_frame, text="Direct Link")
+        nb.add(timeline_frame, text="Timeline")
+        nb.add(imei_frame, text="IMEI / IMSI")
+
+        # Top contacts
+        controls = ttk.LabelFrame(contacts_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+
+        ttk.Label(controls, text="Number:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.tc_number = ttk.Entry(controls, width=22)
+        self.tc_number.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date From:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.tc_date_from = ttk.Entry(controls, width=14)
+        self.tc_date_from.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date To:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.tc_date_to = ttk.Entry(controls, width=14)
+        self.tc_date_to.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Limit:").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        self.tc_limit = ttk.Entry(controls, width=8)
+        self.tc_limit.insert(0, "50")
+        self.tc_limit.grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        btns = ttk.Frame(controls)
+        btns.grid(row=1, column=0, columnspan=8, sticky=tk.W, pady=5)
+        ttk.Button(btns, text="Run", command=self.run_top_contacts).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export", command=lambda: self.export_treeview_to_csv(self.top_contacts_tree)).pack(side=tk.LEFT, padx=5)
+
+        results = ttk.LabelFrame(contacts_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        self.top_contacts_tree = self._create_results_tree(
+            parent=results,
+            columns=("CONTACT", "CALLS", "TOTAL_DURATION", "FIRST_DT", "LAST_DT"),
+            headings={
+                "#0": "Rank",
+                "CONTACT": "Contact",
+                "CALLS": "Calls",
+                "TOTAL_DURATION": "Total Dur(s)",
+                "FIRST_DT": "First Seen",
+                "LAST_DT": "Last Seen",
+            },
+            widths={
+                "#0": 60,
+                "CONTACT": 160,
+                "CALLS": 90,
+                "TOTAL_DURATION": 110,
+                "FIRST_DT": 170,
+                "LAST_DT": 170,
+            },
+        )
+
+        # Mutual contacts (two numbers)
+        controls = ttk.LabelFrame(mutual_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+
+        ttk.Label(controls, text="Number A:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.mc_number_a = ttk.Entry(controls, width=22)
+        self.mc_number_a.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Number B:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.mc_number_b = ttk.Entry(controls, width=22)
+        self.mc_number_b.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date From:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.mc_date_from = ttk.Entry(controls, width=14)
+        self.mc_date_from.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date To:").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        self.mc_date_to = ttk.Entry(controls, width=14)
+        self.mc_date_to.grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Limit:").grid(row=0, column=8, padx=5, pady=5, sticky=tk.W)
+        self.mc_limit = ttk.Entry(controls, width=8)
+        self.mc_limit.insert(0, "100")
+        self.mc_limit.grid(row=0, column=9, padx=5, pady=5, sticky=tk.W)
+
+        btns = ttk.Frame(controls)
+        btns.grid(row=1, column=0, columnspan=10, sticky=tk.W, pady=5)
+        ttk.Button(btns, text="Run", command=self.run_mutual_contacts).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export", command=lambda: self.export_treeview_to_csv(self.mutual_contacts_tree)).pack(side=tk.LEFT, padx=5)
+
+        results = ttk.LabelFrame(mutual_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        self.mutual_contacts_tree = self._create_results_tree(
+            parent=results,
+            columns=("CONTACT", "CALLS_A", "CALLS_B", "TOTAL_CALLS", "TOTAL_DURATION"),
+            headings={
+                "#0": "Rank",
+                "CONTACT": "Contact",
+                "CALLS_A": "Calls(A)",
+                "CALLS_B": "Calls(B)",
+                "TOTAL_CALLS": "Total Calls",
+                "TOTAL_DURATION": "Total Dur(s)",
+            },
+            widths={
+                "#0": 60,
+                "CONTACT": 160,
+                "CALLS_A": 90,
+                "CALLS_B": 90,
+                "TOTAL_CALLS": 100,
+                "TOTAL_DURATION": 110,
+            },
+        )
+
+        # Direct link (two numbers)
+        controls = ttk.LabelFrame(link_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+
+        ttk.Label(controls, text="Number A:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.dl_number_a = ttk.Entry(controls, width=22)
+        self.dl_number_a.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Number B:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.dl_number_b = ttk.Entry(controls, width=22)
+        self.dl_number_b.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date From:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.dl_date_from = ttk.Entry(controls, width=14)
+        self.dl_date_from.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date To:").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        self.dl_date_to = ttk.Entry(controls, width=14)
+        self.dl_date_to.grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Limit:").grid(row=0, column=8, padx=5, pady=5, sticky=tk.W)
+        self.dl_limit = ttk.Entry(controls, width=8)
+        self.dl_limit.insert(0, "500")
+        self.dl_limit.grid(row=0, column=9, padx=5, pady=5, sticky=tk.W)
+
+        btns = ttk.Frame(controls)
+        btns.grid(row=1, column=0, columnspan=10, sticky=tk.W, pady=5)
+        ttk.Button(btns, text="Run", command=self.run_direct_link).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export Calls", command=lambda: self.export_treeview_to_csv(self.direct_link_calls_tree)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export Types", command=lambda: self.export_treeview_to_csv(self.direct_link_types_tree)).pack(side=tk.LEFT, padx=5)
+
+        summary = ttk.LabelFrame(link_frame, text="Summary", padding="10")
+        summary.pack(fill=tk.X, pady=5)
+        self.direct_link_summary_tree = self._create_results_tree(
+            parent=summary,
+            columns=("VALUE",),
+            headings={"#0": "Field", "VALUE": "Value"},
+            widths={"#0": 220, "VALUE": 800},
+        )
+
+        paned = ttk.PanedWindow(link_frame, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        calls_frame = ttk.LabelFrame(paned, text="Calls Between Numbers", padding="10")
+        types_frame = ttk.LabelFrame(paned, text="Call Type Breakdown", padding="10")
+        paned.add(calls_frame, weight=3)
+        paned.add(types_frame, weight=1)
+
+        self.direct_link_calls_tree = self._create_results_tree(
+            parent=calls_frame,
+            columns=("DATETIME", "DIRECTION", "DURATION", "CALL_TYPE", "SERVICE_TYPE", "IMEI", "IMSI", "FIRST_CGI", "LAST_CGI"),
+            headings={
+                "#0": "ID",
+                "DATETIME": "DateTime",
+                "DIRECTION": "Direction",
+                "DURATION": "Dur(s)",
+                "CALL_TYPE": "Call Type",
+                "SERVICE_TYPE": "Service Type",
+                "IMEI": "IMEI",
+                "IMSI": "IMSI",
+                "FIRST_CGI": "First CGI",
+                "LAST_CGI": "Last CGI",
+            },
+            widths={
+                "#0": 80,
+                "DATETIME": 170,
+                "DIRECTION": 110,
+                "DURATION": 90,
+                "CALL_TYPE": 120,
+                "SERVICE_TYPE": 140,
+                "IMEI": 160,
+                "IMSI": 160,
+                "FIRST_CGI": 140,
+                "LAST_CGI": 140,
+            },
+        )
+
+        self.direct_link_types_tree = self._create_results_tree(
+            parent=types_frame,
+            columns=("VALUE", "COUNT"),
+            headings={"#0": "Rank", "VALUE": "Call Type", "COUNT": "Count"},
+            widths={"#0": 60, "VALUE": 240, "COUNT": 100},
+        )
+
+        # Timeline
+        controls = ttk.LabelFrame(timeline_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+
+        ttk.Label(controls, text="Number:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.tl_number = ttk.Entry(controls, width=22)
+        self.tl_number.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date From:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.tl_date_from = ttk.Entry(controls, width=14)
+        self.tl_date_from.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date To:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.tl_date_to = ttk.Entry(controls, width=14)
+        self.tl_date_to.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        self.tl_group_var = tk.StringVar(value="day")
+        ttk.Radiobutton(controls, text="Daily", variable=self.tl_group_var, value="day").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        ttk.Radiobutton(controls, text="Hourly", variable=self.tl_group_var, value="hour").grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Limit:").grid(row=0, column=8, padx=5, pady=5, sticky=tk.W)
+        self.tl_limit = ttk.Entry(controls, width=8)
+        self.tl_limit.insert(0, "400")
+        self.tl_limit.grid(row=0, column=9, padx=5, pady=5, sticky=tk.W)
+
+        btns = ttk.Frame(controls)
+        btns.grid(row=1, column=0, columnspan=10, sticky=tk.W, pady=5)
+        ttk.Button(btns, text="Run", command=self.run_timeline).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export", command=lambda: self.export_treeview_to_csv(self.timeline_tree)).pack(side=tk.LEFT, padx=5)
+
+        results = ttk.LabelFrame(timeline_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        self.timeline_tree = self._create_results_tree(
+            parent=results,
+            columns=("PERIOD", "CALLS", "TOTAL_DURATION"),
+            headings={
+                "#0": "Row",
+                "PERIOD": "Period",
+                "CALLS": "Calls",
+                "TOTAL_DURATION": "Total Dur(s)",
+            },
+            widths={
+                "#0": 60,
+                "PERIOD": 220,
+                "CALLS": 100,
+                "TOTAL_DURATION": 130,
+            },
+        )
+
+        # IMEI / IMSI
+        sub = ttk.Notebook(imei_frame)
+        self.inv_imei_notebook = sub
+        sub.pack(fill=tk.BOTH, expand=True)
+
+        imei_to_numbers = ttk.Frame(sub, padding="10")
+        numbers_to_imei = ttk.Frame(sub, padding="10")
+        self.inv_imei_tab_i2n = imei_to_numbers
+        self.inv_imei_tab_n2i = numbers_to_imei
+        sub.add(imei_to_numbers, text="IMEI → Numbers")
+        sub.add(numbers_to_imei, text="Number → IMEI")
+
+        controls = ttk.LabelFrame(imei_to_numbers, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="IMEI:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.i2n_imei = ttk.Entry(controls, width=30)
+        self.i2n_imei.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.i2n_limit = ttk.Entry(controls, width=8)
+        self.i2n_limit.insert(0, "200")
+        self.i2n_limit.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=self.run_numbers_by_imei).grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.imei_numbers_tree)).grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(imei_to_numbers, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.imei_numbers_tree = self._create_results_tree(
+            parent=results,
+            columns=("NUMBER", "CALLS", "FIRST_DT", "LAST_DT"),
+            headings={
+                "#0": "Rank",
+                "NUMBER": "Number",
+                "CALLS": "Calls",
+                "FIRST_DT": "First Seen",
+                "LAST_DT": "Last Seen",
+            },
+            widths={
+                "#0": 60,
+                "NUMBER": 180,
+                "CALLS": 100,
+                "FIRST_DT": 200,
+                "LAST_DT": 200,
+            },
+        )
+
+        controls = ttk.LabelFrame(numbers_to_imei, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="Number:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.n2i_number = ttk.Entry(controls, width=30)
+        self.n2i_number.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.n2i_limit = ttk.Entry(controls, width=8)
+        self.n2i_limit.insert(0, "200")
+        self.n2i_limit.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=self.run_imeis_by_number).grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.number_imei_tree)).grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(numbers_to_imei, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.number_imei_tree = self._create_results_tree(
+            parent=results,
+            columns=("IMEI", "CALLS", "FIRST_DT", "LAST_DT"),
+            headings={
+                "#0": "Rank",
+                "IMEI": "IMEI",
+                "CALLS": "Calls",
+                "FIRST_DT": "First Seen",
+                "LAST_DT": "Last Seen",
+            },
+            widths={
+                "#0": 60,
+                "IMEI": 180,
+                "CALLS": 100,
+                "FIRST_DT": 200,
+                "LAST_DT": 200,
+            },
+        )
+    
+    def create_tower_cdr_tab(self):
+        """Create Tower/CGI tab"""
+        frame = ttk.Frame(self.tower_cdr_frame, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        title = ttk.Label(frame, text="Tower / CGI Analysis", font=("Helvetica", 14, "bold"))
+        title.pack(pady=10)
+
+        nb = ttk.Notebook(frame)
+        self.tower_notebook = nb
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        top_cgi_frame = ttk.Frame(nb, padding="10")
+        cgi_numbers_frame = ttk.Frame(nb, padding="10")
+        self.tower_tab_top = top_cgi_frame
+        self.tower_tab_numbers = cgi_numbers_frame
+        nb.add(top_cgi_frame, text="Top CGI")
+        nb.add(cgi_numbers_frame, text="CGI → Numbers")
+
+        # Top CGI
+        controls = ttk.LabelFrame(top_cgi_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+
+        ttk.Label(controls, text="Number (optional):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.cgi_number = ttk.Entry(controls, width=22)
+        self.cgi_number.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date From:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.cgi_date_from = ttk.Entry(controls, width=14)
+        self.cgi_date_from.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Date To:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.cgi_date_to = ttk.Entry(controls, width=14)
+        self.cgi_date_to.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        ttk.Label(controls, text="Limit:").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        self.cgi_limit = ttk.Entry(controls, width=8)
+        self.cgi_limit.insert(0, "100")
+        self.cgi_limit.grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        btns = ttk.Frame(controls)
+        btns.grid(row=1, column=0, columnspan=8, sticky=tk.W, pady=5)
+        ttk.Button(btns, text="Top First CGI", command=lambda: self.run_top_cgi("first_cgi")).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Top Last CGI", command=lambda: self.run_top_cgi("last_cgi")).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export First", command=lambda: self.export_treeview_to_csv(self.first_cgi_tree)).pack(side=tk.LEFT, padx=5)
+        ttk.Button(btns, text="Export Last", command=lambda: self.export_treeview_to_csv(self.last_cgi_tree)).pack(side=tk.LEFT, padx=5)
+
+        paned = ttk.PanedWindow(top_cgi_frame, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        first_frame = ttk.LabelFrame(paned, text="First CGI", padding="10")
+        last_frame = ttk.LabelFrame(paned, text="Last CGI", padding="10")
+        paned.add(first_frame, weight=1)
+        paned.add(last_frame, weight=1)
+
+        self.first_cgi_tree = self._create_results_tree(
+            parent=first_frame,
+            columns=("CGI", "COUNT"),
+            headings={"#0": "Rank", "CGI": "CGI", "COUNT": "Count"},
+            widths={"#0": 60, "CGI": 260, "COUNT": 100},
+        )
+        self.last_cgi_tree = self._create_results_tree(
+            parent=last_frame,
+            columns=("CGI", "COUNT"),
+            headings={"#0": "Rank", "CGI": "CGI", "COUNT": "Count"},
+            widths={"#0": 60, "CGI": 260, "COUNT": 100},
+        )
+
+        # CGI -> Numbers
+        controls = ttk.LabelFrame(cgi_numbers_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="CGI contains:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.cgi_value = ttk.Entry(controls, width=30)
+        self.cgi_value.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.cgi_numbers_limit = ttk.Entry(controls, width=8)
+        self.cgi_numbers_limit.insert(0, "200")
+        self.cgi_numbers_limit.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=self.run_numbers_on_cgi).grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.cgi_numbers_tree)).grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(cgi_numbers_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        self.cgi_numbers_tree = self._create_results_tree(
+            parent=results,
+            columns=("NUMBER", "COUNT"),
+            headings={"#0": "Rank", "NUMBER": "Number", "COUNT": "Count"},
+            widths={"#0": 60, "NUMBER": 220, "COUNT": 100},
+        )
+    
+    def create_groups_tab(self):
+        """Create groups analysis tab"""
+        frame = ttk.Frame(self.groups_frame, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        title = ttk.Label(frame, text="Groups Analysis", font=("Helvetica", 14, "bold"))
+        title.pack(pady=10)
+        
+        # Group analysis options
+        options = ttk.LabelFrame(frame, text="Group By", padding="10")
+        options.pack(fill=tk.X, pady=10)
+
+        buttons = [
+            ("A Party", "a_party"),
+            ("B Party", "b_party"),
+            ("IMEI", "imei"),
+            ("IMSI", "imsi"),
+            ("Call Type", "call_type"),
+            ("Service Type", "service_type"),
+            ("TOC", "toc"),
+            ("Roam NW", "roam_nw"),
+            ("First CGI", "first_cgi"),
+            ("Last CGI", "last_cgi"),
+        ]
+
+        for idx, (label, key) in enumerate(buttons):
+            ttk.Button(options, text=label, command=lambda k=key: self.analyze_group(k)).grid(
+                row=idx // 5,
+                column=idx % 5,
+                padx=5,
+                pady=5,
+                sticky=tk.W,
+            )
+
+        ttk.Button(options, text="Export", command=lambda: self.export_treeview_to_csv(self.groups_tree)).grid(
+            row=2,
+            column=0,
+            padx=5,
+            pady=5,
+            sticky=tk.W,
+        )
+        
+        # Results
+        results_frame = ttk.LabelFrame(frame, text="Group Results", padding="10")
+        results_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        vsb = ttk.Scrollbar(results_frame, orient=tk.VERTICAL)
+        hsb = ttk.Scrollbar(results_frame, orient=tk.HORIZONTAL)
+        
+        self.groups_tree = ttk.Treeview(results_frame, columns=("VALUE", "COUNT"), 
+                                        yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.config(command=self.groups_tree.yview)
+        hsb.config(command=self.groups_tree.xview)
+        
+        self.groups_tree.column("#0", width=200, minwidth=200)
+        self.groups_tree.column("VALUE", width=400, minwidth=300)
+        self.groups_tree.column("COUNT", width=100, minwidth=100)
+        
+        self._set_tree_heading(self.groups_tree, "#0", "Rank")
+        self._set_tree_heading(self.groups_tree, "VALUE", "Value")
+        self._set_tree_heading(self.groups_tree, "COUNT", "Count")
+        
+        self.groups_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        vsb.grid(row=0, column=1, sticky=tk.NS)
+        hsb.grid(row=1, column=0, sticky=tk.EW)
+        results_frame.columnconfigure(0, weight=1)
+        results_frame.rowconfigure(0, weight=1)
+    
+    def create_reports_tab(self):
+        """Create reports and analytics tab"""
+        frame = ttk.Frame(self.reports_frame, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        title = ttk.Label(frame, text="Reports & Analytics", font=("Helvetica", 14, "bold"))
+        title.pack(pady=10)
+
+        nb = ttk.Notebook(frame)
+        self.reports_notebook = nb
+        nb.pack(fill=tk.BOTH, expand=True)
+
+        summary_frame = ttk.Frame(nb, padding="10")
+        duration_frame = ttk.Frame(nb, padding="10")
+        imei_frame = ttk.Frame(nb, padding="10")
+        call_type_frame = ttk.Frame(nb, padding="10")
+        service_type_frame = ttk.Frame(nb, padding="10")
+
+        nb.add(summary_frame, text="Summary")
+        nb.add(duration_frame, text="Top Durations")
+        nb.add(imei_frame, text="Top IMEI")
+        nb.add(call_type_frame, text="Call Types")
+        nb.add(service_type_frame, text="Service Types")
+
+        # Summary
+        controls = ttk.Frame(summary_frame)
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Button(controls, text="Refresh", command=self.run_summary).pack(side=tk.LEFT, padx=5)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.summary_tree)).pack(side=tk.LEFT, padx=5)
+
+        results = ttk.LabelFrame(summary_frame, text="Database Summary", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.summary_tree = self._create_results_tree(
+            parent=results,
+            columns=("VALUE",),
+            headings={"#0": "Field", "VALUE": "Value"},
+            widths={"#0": 220, "VALUE": 500},
+        )
+
+        # Top durations
+        controls = ttk.LabelFrame(duration_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="Number (optional):").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.rp_dur_number = ttk.Entry(controls, width=22)
+        self.rp_dur_number.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Date From:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.rp_dur_date_from = ttk.Entry(controls, width=14)
+        self.rp_dur_date_from.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Date To:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.rp_dur_date_to = ttk.Entry(controls, width=14)
+        self.rp_dur_date_to.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        self.rp_dur_limit = ttk.Entry(controls, width=8)
+        self.rp_dur_limit.insert(0, "50")
+        self.rp_dur_limit.grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=self.run_top_durations).grid(row=0, column=8, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.top_duration_tree)).grid(row=0, column=9, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(duration_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.top_duration_tree = self._create_results_tree(
+            parent=results,
+            columns=("DATETIME", "A_PARTY", "B_PARTY", "DURATION", "CALL_TYPE", "SERVICE_TYPE", "IMEI", "IMSI"),
+            headings={
+                "#0": "Rank",
+                "DATETIME": "DateTime",
+                "A_PARTY": "A Party",
+                "B_PARTY": "B Party",
+                "DURATION": "Dur(s)",
+                "CALL_TYPE": "Call Type",
+                "SERVICE_TYPE": "Service Type",
+                "IMEI": "IMEI",
+                "IMSI": "IMSI",
+            },
+            widths={
+                "#0": 60,
+                "DATETIME": 170,
+                "A_PARTY": 140,
+                "B_PARTY": 140,
+                "DURATION": 90,
+                "CALL_TYPE": 120,
+                "SERVICE_TYPE": 140,
+                "IMEI": 160,
+                "IMSI": 160,
+            },
+        )
+
+        # Top IMEI
+        controls = ttk.LabelFrame(imei_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="Date From:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.rp_imei_date_from = ttk.Entry(controls, width=14)
+        self.rp_imei_date_from.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Date To:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.rp_imei_date_to = ttk.Entry(controls, width=14)
+        self.rp_imei_date_to.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.rp_imei_limit = ttk.Entry(controls, width=8)
+        self.rp_imei_limit.insert(0, "50")
+        self.rp_imei_limit.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=self.run_top_imeis).grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.top_imei_tree)).grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(imei_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.top_imei_tree = self._create_results_tree(
+            parent=results,
+            columns=("IMEI", "CALLS", "FIRST_DT", "LAST_DT"),
+            headings={"#0": "Rank", "IMEI": "IMEI", "CALLS": "Calls", "FIRST_DT": "First Seen", "LAST_DT": "Last Seen"},
+            widths={"#0": 60, "IMEI": 200, "CALLS": 100, "FIRST_DT": 200, "LAST_DT": 200},
+        )
+
+        # Call types distribution
+        controls = ttk.LabelFrame(call_type_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="Date From:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.rp_ct_date_from = ttk.Entry(controls, width=14)
+        self.rp_ct_date_from.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Date To:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.rp_ct_date_to = ttk.Entry(controls, width=14)
+        self.rp_ct_date_to.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.rp_ct_limit = ttk.Entry(controls, width=8)
+        self.rp_ct_limit.insert(0, "200")
+        self.rp_ct_limit.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=lambda: self.run_distribution("call_type")).grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.call_type_tree)).grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(call_type_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.call_type_tree = self._create_results_tree(
+            parent=results,
+            columns=("VALUE", "COUNT"),
+            headings={"#0": "Rank", "VALUE": "Call Type", "COUNT": "Count"},
+            widths={"#0": 60, "VALUE": 250, "COUNT": 100},
+        )
+
+        # Service types distribution
+        controls = ttk.LabelFrame(service_type_frame, text="Inputs", padding="10")
+        controls.pack(fill=tk.X, pady=5)
+        ttk.Label(controls, text="Date From:").grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
+        self.rp_st_date_from = ttk.Entry(controls, width=14)
+        self.rp_st_date_from.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Date To:").grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.rp_st_date_to = ttk.Entry(controls, width=14)
+        self.rp_st_date_to.grid(row=0, column=3, padx=5, pady=5, sticky=tk.W)
+        ttk.Label(controls, text="Limit:").grid(row=0, column=4, padx=5, pady=5, sticky=tk.W)
+        self.rp_st_limit = ttk.Entry(controls, width=8)
+        self.rp_st_limit.insert(0, "200")
+        self.rp_st_limit.grid(row=0, column=5, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Run", command=lambda: self.run_distribution("service_type")).grid(row=0, column=6, padx=5, pady=5, sticky=tk.W)
+        ttk.Button(controls, text="Export", command=lambda: self.export_treeview_to_csv(self.service_type_tree)).grid(row=0, column=7, padx=5, pady=5, sticky=tk.W)
+
+        results = ttk.LabelFrame(service_type_frame, text="Results", padding="10")
+        results.pack(fill=tk.BOTH, expand=True, pady=5)
+        self.service_type_tree = self._create_results_tree(
+            parent=results,
+            columns=("VALUE", "COUNT"),
+            headings={"#0": "Rank", "VALUE": "Service Type", "COUNT": "Count"},
+            widths={"#0": 60, "VALUE": 280, "COUNT": 100},
+        )
+
+        self.run_summary()
+    
+    def create_database_tab(self):
+        """Create database management tab"""
+        frame = ttk.Frame(self.database_frame, padding="10")
+        frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Database controls
+        control_frame = ttk.LabelFrame(frame, text="Database Management", padding="10")
+        control_frame.pack(fill=tk.X, pady=10)
+        
+        ttk.Button(control_frame, text="Upload CSV File", 
+                  command=self.upload_csv).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(control_frame, text="View All Records", command=self.view_all_records).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(control_frame, text="Clear Database", 
+                  command=self.clear_database).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(control_frame, text="Export to CSV", 
+                  command=self.export_to_csv).pack(side=tk.LEFT, padx=5, pady=5)
+
+        self.db_limit_var = tk.StringVar(value="500")
+        self.db_page_var = tk.StringVar(value="Page 1")
+        self.db_total_var = tk.StringVar(value="0 records")
+
+        ttk.Label(control_frame, text="Limit:").pack(side=tk.LEFT, padx=10)
+        ttk.Entry(control_frame, width=8, textvariable=self.db_limit_var).pack(side=tk.LEFT)
+        ttk.Label(control_frame, textvariable=self.db_page_var).pack(side=tk.LEFT, padx=10)
+        ttk.Label(control_frame, textvariable=self.db_total_var).pack(side=tk.LEFT, padx=10)
+        ttk.Button(control_frame, text="Prev", command=self.db_prev_page).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="Next", command=self.db_next_page).pack(side=tk.LEFT, padx=5)
+        
+        paned = ttk.PanedWindow(frame, orient=tk.HORIZONTAL)
+        paned.pack(fill=tk.BOTH, expand=True, pady=5)
+
+        table_frame = ttk.LabelFrame(paned, text="Database Records", padding="10")
+        details_frame = ttk.LabelFrame(paned, text="Record Details", padding="10")
+        paned.add(table_frame, weight=4)
+        paned.add(details_frame, weight=2)
+
+        vsb = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
+        hsb = ttk.Scrollbar(table_frame, orient=tk.HORIZONTAL)
+
+        self.db_tree = ttk.Treeview(
+            table_frame,
+            columns=(
+                "A_PARTY",
+                "B_PARTY",
+                "DATE",
+                "TIME",
+                "DURATION",
+                "CALL_TYPE",
+                "SERVICE_TYPE",
+                "IMEI",
+                "IMSI",
+                "FIRST_CGI",
+                "LAST_CGI",
+            ),
+            yscrollcommand=vsb.set,
+            xscrollcommand=hsb.set,
+        )
+        vsb.config(command=self.db_tree.yview)
+        hsb.config(command=self.db_tree.xview)
+
+        self.db_tree.column("#0", width=80, minwidth=80)
+        self.db_tree.column("A_PARTY", width=140, minwidth=120)
+        self.db_tree.column("B_PARTY", width=140, minwidth=120)
+        self.db_tree.column("DATE", width=100, minwidth=100)
+        self.db_tree.column("TIME", width=90, minwidth=90)
+        self.db_tree.column("DURATION", width=90, minwidth=80)
+        self.db_tree.column("CALL_TYPE", width=120, minwidth=100)
+        self.db_tree.column("SERVICE_TYPE", width=140, minwidth=120)
+        self.db_tree.column("IMEI", width=160, minwidth=140)
+        self.db_tree.column("IMSI", width=160, minwidth=140)
+        self.db_tree.column("FIRST_CGI", width=140, minwidth=120)
+        self.db_tree.column("LAST_CGI", width=140, minwidth=120)
+
+        self._set_tree_heading(self.db_tree, "#0", "ID")
+        self._set_tree_heading(self.db_tree, "A_PARTY", "A Party")
+        self._set_tree_heading(self.db_tree, "B_PARTY", "B Party")
+        self._set_tree_heading(self.db_tree, "DATE", "Date")
+        self._set_tree_heading(self.db_tree, "TIME", "Time")
+        self._set_tree_heading(self.db_tree, "DURATION", "Dur(s)")
+        self._set_tree_heading(self.db_tree, "CALL_TYPE", "Call Type")
+        self._set_tree_heading(self.db_tree, "SERVICE_TYPE", "Service Type")
+        self._set_tree_heading(self.db_tree, "IMEI", "IMEI")
+        self._set_tree_heading(self.db_tree, "IMSI", "IMSI")
+        self._set_tree_heading(self.db_tree, "FIRST_CGI", "First CGI")
+        self._set_tree_heading(self.db_tree, "LAST_CGI", "Last CGI")
+
+        self.db_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        vsb.grid(row=0, column=1, sticky=tk.NS)
+        hsb.grid(row=1, column=0, sticky=tk.EW)
+        table_frame.columnconfigure(0, weight=1)
+        table_frame.rowconfigure(0, weight=1)
+
+        self.db_tree.bind("<<TreeviewSelect>>", self.on_db_select)
+        self.db_tree.bind("<Button-3>", lambda e: self.show_record_context_menu(e, self.db_tree))
+        self.db_tree.bind("<Control-Button-1>", lambda e: self.show_record_context_menu(e, self.db_tree))
+
+        details_vsb = ttk.Scrollbar(details_frame, orient=tk.VERTICAL)
+        self.db_details_tree = ttk.Treeview(
+            details_frame,
+            columns=("VALUE",),
+            show="tree headings",
+            yscrollcommand=details_vsb.set,
+        )
+        details_vsb.config(command=self.db_details_tree.yview)
+
+        self.db_details_tree.column("#0", width=150, minwidth=120)
+        self.db_details_tree.column("VALUE", width=360, minwidth=200)
+        self.db_details_tree.heading("#0", text="Field", anchor=tk.W)
+        self.db_details_tree.heading("VALUE", text="Value", anchor=tk.W)
+
+        self.db_details_tree.grid(row=0, column=0, sticky=tk.NSEW)
+        details_vsb.grid(row=0, column=1, sticky=tk.NS)
+        details_frame.columnconfigure(0, weight=1)
+        details_frame.rowconfigure(0, weight=1)
+    
+    # Implementation methods
+    
+    def set_status(self, message: str):
+        if hasattr(self, "status_var"):
+            self.status_var.set(message)
+
+    def refresh_ui(self):
+        try:
+            total = self.db_manager.count_records_advanced({})
+            self._db_total = total
+            self.set_status(f"DB: {self.db_path} | Records: {total}")
+        except Exception:
+            self.set_status(f"DB: {self.db_path}")
+
+        try:
+            call_types = [""] + sorted(self.db_manager.get_distinct_values("call_type"))
+            service_types = [""] + sorted(self.db_manager.get_distinct_values("service_type"))
+
+            if hasattr(self, "search_call_type"):
+                self.search_call_type["values"] = call_types
+            if hasattr(self, "search_service_type"):
+                self.search_service_type["values"] = service_types
+        except Exception:
+            pass
+
+        if hasattr(self, "db_total_var"):
+            self.db_total_var.set(f"{self._db_total} records")
+
+    def _set_tree_heading(self, tree: ttk.Treeview, col: str, text: str):
+        tree.heading(col, text=text, anchor=tk.W, command=lambda c=col, t=tree: self._sort_tree(t, c))
+
+    @staticmethod
+    def _coerce_sort_value(value: Any) -> Tuple[int, Any]:
+        if value is None:
+            return (1, "")
+        s = str(value).strip()
+        if not s:
+            return (1, "")
+        try:
+            return (0, int(s))
+        except Exception:
+            pass
+        try:
+            return (0, float(s))
+        except Exception:
+            pass
+        return (0, s.lower())
+
+    def _sort_tree(self, tree: ttk.Treeview, col: str):
+        reverse = bool(self._sort_reverse.get((tree, col), False))
+
+        items: List[Tuple[Tuple[int, Any], str]] = []
+        for iid in tree.get_children(""):
+            if col == "#0":
+                value = tree.item(iid, "text")
+            else:
+                value = tree.set(iid, col)
+            items.append((self._coerce_sort_value(value), iid))
+
+        items.sort(key=lambda x: x[0], reverse=reverse)
+        for index, (_, iid) in enumerate(items):
+            tree.move(iid, "", index)
+
+        self._sort_reverse[(tree, col)] = not reverse
+
+    def _create_results_tree(
+        self,
+        parent: ttk.Frame,
+        columns: Tuple[str, ...],
+        headings: Dict[str, str],
+        widths: Dict[str, int],
+    ) -> ttk.Treeview:
+        vsb = ttk.Scrollbar(parent, orient=tk.VERTICAL)
+        hsb = ttk.Scrollbar(parent, orient=tk.HORIZONTAL)
+
+        tree = ttk.Treeview(parent, columns=columns, yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        vsb.config(command=tree.yview)
+        hsb.config(command=tree.xview)
+
+        tree.column("#0", width=widths.get("#0", 80), minwidth=60)
+        tree.heading("#0", text=headings.get("#0", "ID"), anchor=tk.W)
+
+        for col in columns:
+            tree.column(col, width=widths.get(col, 120), minwidth=max(80, widths.get(col, 120) // 2))
+            self._set_tree_heading(tree, col, headings.get(col, col))
+
+        tree.grid(row=0, column=0, sticky=tk.NSEW)
+        vsb.grid(row=0, column=1, sticky=tk.NS)
+        hsb.grid(row=1, column=0, sticky=tk.EW)
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(0, weight=1)
+        return tree
+
+    def export_treeview_to_csv(self, tree: ttk.Treeview):
+        items = tree.get_children()
+        if not items:
+            messagebox.showwarning("No Data", "No data to export")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        try:
+            columns = list(tree["columns"])
+            headers = [tree.heading("#0").get("text", "ID")] + [tree.heading(c).get("text", c) for c in columns]
+
+            with open(file_path, "w", newline="", encoding="utf-8") as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(headers)
+                for iid in items:
+                    row_id = tree.item(iid).get("text", "")
+                    values = tree.item(iid).get("values", [])
+                    writer.writerow([row_id] + list(values))
+
+            self.set_status(f"Exported {len(items)} rows → {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Export error: {str(e)}")
+
+    @staticmethod
+    def _safe_int(value: str, default: int) -> int:
+        try:
+            return int(str(value).strip())
+        except Exception:
+            return default
+
+    def _populate_details(self, record_id: int, details_tree: ttk.Treeview):
+        for item in details_tree.get_children():
+            details_tree.delete(item)
+
+        details = self.db_manager.get_record_details(record_id)
+        if not details:
+            return
+
+        preferred = ["id"] + list(getattr(self.db_manager, "_INSERT_COLUMNS", []))
+        keys = [k for k in preferred if k in details] + [k for k in details.keys() if k not in preferred]
+
+        for key in keys:
+            value = details.get(key)
+            details_tree.insert("", tk.END, text=str(key), values=(("" if value is None else str(value)),))
+
+    def _get_row_data_from_tree(self, tree: ttk.Treeview, event: Optional[tk.Event] = None) -> Optional[Dict[str, str]]:
+        iid = None
+        if event is not None:
+            iid = tree.identify_row(event.y)
+        if not iid:
+            selected = tree.selection()
+            iid = selected[0] if selected else None
+        if not iid:
+            return None
+
+        try:
+            tree.selection_set(iid)
+            tree.focus(iid)
+        except Exception:
+            pass
+
+        cols = list(tree["columns"])
+        values = list(tree.item(iid, "values") or [])
+
+        data: Dict[str, str] = {"ID": str(tree.item(iid, "text") or iid)}
+        for idx, col in enumerate(cols):
+            data[col] = str(values[idx]) if idx < len(values) and values[idx] is not None else ""
+        return data
+
+    def show_record_context_menu(self, event: tk.Event, tree: ttk.Treeview):
+        data = self._get_row_data_from_tree(tree, event=event)
+        if not data:
+            return
+
+        a_party = data.get("A_PARTY", "").strip()
+        b_party = data.get("B_PARTY", "").strip()
+        imei = data.get("IMEI", "").strip()
+        first_cgi = data.get("FIRST_CGI", "").strip()
+        last_cgi = data.get("LAST_CGI", "").strip()
+
+        menu = tk.Menu(self.root, tearoff=0)
+
+        if a_party:
+            menu.add_command(label="Investigate A Party (Top Contacts)", command=lambda: self._open_investigation_top_contacts(a_party))
+            menu.add_command(label="Investigate A Party (Timeline)", command=lambda: self._open_investigation_timeline(a_party))
+            menu.add_command(label="A Party → IMEI", command=lambda: self._open_investigation_number_to_imei(a_party))
+            menu.add_separator()
+
+        if b_party:
+            menu.add_command(label="Investigate B Party (Top Contacts)", command=lambda: self._open_investigation_top_contacts(b_party))
+            menu.add_command(label="Investigate B Party (Timeline)", command=lambda: self._open_investigation_timeline(b_party))
+            menu.add_command(label="B Party → IMEI", command=lambda: self._open_investigation_number_to_imei(b_party))
+            menu.add_separator()
+
+        if imei:
+            menu.add_command(label="IMEI → Numbers", command=lambda: self._open_investigation_imei_to_numbers(imei))
+            menu.add_separator()
+
+        if a_party:
+            menu.add_command(label="Tower/CGI for A Party", command=lambda: self._open_tower_for_number(a_party))
+        if b_party:
+            menu.add_command(label="Tower/CGI for B Party", command=lambda: self._open_tower_for_number(b_party))
+
+        if first_cgi:
+            menu.add_command(label="CGI → Numbers (First CGI)", command=lambda: self._open_numbers_on_cgi(first_cgi))
+        if last_cgi:
+            menu.add_command(label="CGI → Numbers (Last CGI)", command=lambda: self._open_numbers_on_cgi(last_cgi))
+
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
+    def _open_investigation_top_contacts(self, number: str):
+        self.notebook.select(self.normal_cdr_frame)
+        if hasattr(self, "inv_notebook"):
+            if hasattr(self, "inv_tab_contacts"):
+                self.inv_notebook.select(self.inv_tab_contacts)
+            else:
+                self.inv_notebook.select(0)
+        self.tc_number.delete(0, tk.END)
+        self.tc_number.insert(0, number)
+        self.run_top_contacts()
+
+    def _open_investigation_timeline(self, number: str):
+        self.notebook.select(self.normal_cdr_frame)
+        if hasattr(self, "inv_notebook"):
+            if hasattr(self, "inv_tab_timeline"):
+                self.inv_notebook.select(self.inv_tab_timeline)
+            else:
+                self.inv_notebook.select(2)
+        self.tl_number.delete(0, tk.END)
+        self.tl_number.insert(0, number)
+        self.run_timeline()
+
+    def _open_investigation_imei_to_numbers(self, imei: str):
+        self.notebook.select(self.normal_cdr_frame)
+        if hasattr(self, "inv_notebook"):
+            if hasattr(self, "inv_tab_imei"):
+                self.inv_notebook.select(self.inv_tab_imei)
+            else:
+                self.inv_notebook.select(3)
+        if hasattr(self, "inv_imei_notebook"):
+            if hasattr(self, "inv_imei_tab_i2n"):
+                self.inv_imei_notebook.select(self.inv_imei_tab_i2n)
+            else:
+                self.inv_imei_notebook.select(0)
+        self.i2n_imei.delete(0, tk.END)
+        self.i2n_imei.insert(0, imei)
+        self.run_numbers_by_imei()
+
+    def _open_investigation_number_to_imei(self, number: str):
+        self.notebook.select(self.normal_cdr_frame)
+        if hasattr(self, "inv_notebook"):
+            if hasattr(self, "inv_tab_imei"):
+                self.inv_notebook.select(self.inv_tab_imei)
+            else:
+                self.inv_notebook.select(3)
+        if hasattr(self, "inv_imei_notebook"):
+            if hasattr(self, "inv_imei_tab_n2i"):
+                self.inv_imei_notebook.select(self.inv_imei_tab_n2i)
+            else:
+                self.inv_imei_notebook.select(1)
+        self.n2i_number.delete(0, tk.END)
+        self.n2i_number.insert(0, number)
+        self.run_imeis_by_number()
+
+    def _open_tower_for_number(self, number: str):
+        self.notebook.select(self.tower_cdr_frame)
+        if hasattr(self, "tower_notebook"):
+            if hasattr(self, "tower_tab_top"):
+                self.tower_notebook.select(self.tower_tab_top)
+            else:
+                self.tower_notebook.select(0)
+        self.cgi_number.delete(0, tk.END)
+        self.cgi_number.insert(0, number)
+        self.run_top_cgi("first_cgi")
+        self.run_top_cgi("last_cgi")
+
+    def _open_numbers_on_cgi(self, cgi_value: str):
+        self.notebook.select(self.tower_cdr_frame)
+        if hasattr(self, "tower_notebook"):
+            if hasattr(self, "tower_tab_numbers"):
+                self.tower_notebook.select(self.tower_tab_numbers)
+            else:
+                self.tower_notebook.select(1)
+        self.cgi_value.delete(0, tk.END)
+        self.cgi_value.insert(0, cgi_value)
+        self.run_numbers_on_cgi()
+
+    def upload_csv(self):
+        """Upload CSV file to database"""
+        if self._is_importing:
+            messagebox.showwarning("Import in progress", "An import is already running. Please wait.")
+            return
+
+        file_path = filedialog.askopenfilename(
+            title="Select CSV File",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return
+
+        self._is_importing = True
+        self.set_status(f"Importing: {os.path.basename(file_path)}")
+
+        def progress_cb(progress, count):
+            self.root.after(0, lambda: self.set_status(f"Importing... {progress}% | Inserted: {count}"))
+
+        def worker():
+            try:
+                importer = CSVImporter(self.db_manager)
+                success, message, _count = importer.import_csv(file_path, progress_callback=progress_cb)
+
+                def done():
+                    self._is_importing = False
+                    if success:
+                        messagebox.showinfo("Success", message)
+                        self.refresh_ui()
+                        self.view_all_records()
+                    else:
+                        messagebox.showerror("Error", message)
+                        self.refresh_ui()
+
+                self.root.after(0, done)
+            except Exception as e:
+                def failed():
+                    self._is_importing = False
+                    messagebox.showerror("Error", f"Error uploading file: {str(e)}")
+                    self.refresh_ui()
+
+                self.root.after(0, failed)
+
+        threading.Thread(target=worker, daemon=True).start()
+    
+    def search_records(self):
+        """Search records with filters"""
+        self._search_page = 0
+        self._search_last_filters = self._get_search_filters()
+        self._run_search_page()
+
+    def _get_search_filters(self) -> Dict[str, Any]:
+        filters: Dict[str, Any] = {}
+
+        a_party = self.search_a_party.get().strip()
+        b_party = self.search_b_party.get().strip()
+        imei = self.search_imei.get().strip()
+        imsi = self.search_imsi.get().strip()
+        date_from = self.search_date_from.get().strip()
+        date_to = self.search_date_to.get().strip()
+        time_from = self.search_time_from.get().strip()
+        time_to = self.search_time_to.get().strip()
+        cgi = self.search_cgi.get().strip()
+        call_type = self.search_call_type_var.get().strip() if hasattr(self, "search_call_type_var") else ""
+        service_type = self.search_service_type_var.get().strip() if hasattr(self, "search_service_type_var") else ""
+
+        if a_party:
+            filters["a_party"] = a_party
+        if b_party:
+            filters["b_party"] = b_party
+        if imei:
+            filters["imei"] = imei
+        if imsi:
+            filters["imsi"] = imsi
+        if date_from:
+            filters["date_from"] = date_from
+        if date_to:
+            filters["date_to"] = date_to
+        if time_from:
+            filters["time_from"] = time_from
+        if time_to:
+            filters["time_to"] = time_to
+        if cgi:
+            filters["cgi"] = cgi
+        if call_type:
+            filters["call_type"] = call_type
+        if service_type:
+            filters["service_type"] = service_type
+
+        dur_min = self.search_dur_min.get().strip()
+        dur_max = self.search_dur_max.get().strip()
+        if dur_min:
+            filters["duration_min"] = self._safe_int(dur_min, 0)
+        if dur_max:
+            filters["duration_max"] = self._safe_int(dur_max, 0)
+
+        return filters
+
+    def _run_search_page(self):
+        try:
+            limit = max(1, self._safe_int(self.search_limit_var.get(), 500))
+            offset = self._search_page * limit
+
+            total = self.db_manager.count_records_advanced(self._search_last_filters)
+            self._search_total = total
+
+            rows = self.db_manager.search_records_advanced(self._search_last_filters, limit=limit, offset=offset)
+
+            for item in self.search_tree.get_children():
+                self.search_tree.delete(item)
+
+            for row in rows:
+                dt = row[3] or ""
+                date_str = dt[:10] if dt else ""
+                time_str = dt[11:19] if dt else ""
+                self.search_tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(row[0]),
+                    text=str(row[0]),
+                    values=(
+                        row[1] or "",
+                        row[2] or "",
+                        date_str,
+                        time_str,
+                        row[4] if row[4] is not None else "",
+                        row[5] or "",
+                        row[6] or "",
+                        row[7] or "",
+                        row[8] or "",
+                        row[9] or "",
+                        row[10] or "",
+                    ),
+                )
+
+            max_pages = max(1, (total + limit - 1) // limit)
+            self.search_page_var.set(f"Page {self._search_page + 1} / {max_pages}")
+            self.search_total_var.set(f"{total} results")
+            self.set_status(f"Search: {len(rows)} shown | Total: {total}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Search error: {str(e)}")
+
+    def search_prev_page(self):
+        if self._search_page <= 0:
+            return
+        self._search_page -= 1
+        self._run_search_page()
+
+    def search_next_page(self):
+        limit = max(1, self._safe_int(self.search_limit_var.get(), 500))
+        if (self._search_page + 1) * limit >= self._search_total:
+            return
+        self._search_page += 1
+        self._run_search_page()
+    
+    def clear_search(self):
+        """Clear search fields and results"""
+        self.search_a_party.delete(0, tk.END)
+        self.search_b_party.delete(0, tk.END)
+        self.search_date_from.delete(0, tk.END)
+        self.search_date_to.delete(0, tk.END)
+        self.search_time_from.delete(0, tk.END)
+        self.search_time_to.delete(0, tk.END)
+        self.search_imei.delete(0, tk.END)
+        self.search_imsi.delete(0, tk.END)
+        self.search_dur_min.delete(0, tk.END)
+        self.search_dur_max.delete(0, tk.END)
+        self.search_cgi.delete(0, tk.END)
+        if hasattr(self, "search_call_type_var"):
+            self.search_call_type_var.set("")
+        if hasattr(self, "search_service_type_var"):
+            self.search_service_type_var.set("")
+
+        self._search_page = 0
+        self._search_total = 0
+        self._search_last_filters = {}
+        self.search_page_var.set("Page 1")
+        self.search_total_var.set("0 results")
+
+        for item in self.search_tree.get_children():
+            self.search_tree.delete(item)
+        for item in self.search_details_tree.get_children():
+            self.search_details_tree.delete(item)
+        self.set_status("Search cleared")
+    
+    def export_search_results(self):
+        """Export current search view to CSV"""
+        self.export_treeview_to_csv(self.search_tree)
+
+    def on_search_select(self, _event=None):
+        selected = self.search_tree.selection()
+        if not selected:
+            return
+        try:
+            record_id = int(selected[0])
+        except Exception:
+            return
+        self._populate_details(record_id, self.search_details_tree)
+    
+    def analyze_group(self, group_type):
+        """Analyze groups by type"""
+        try:
+            # Clear existing results
+            for item in self.groups_tree.get_children():
+                self.groups_tree.delete(item)
+            
+            field_map = {
+                "a_party": "target_no",
+                "b_party": "b_party_no",
+                "imei": "imei",
+                "imsi": "imsi",
+                "call_type": "call_type",
+                "service_type": "service_type",
+                "toc": "toc",
+                "roam_nw": "roam_nw",
+                "first_cgi": "first_cgi",
+                "last_cgi": "last_cgi",
+            }
+
+            group_by = field_map.get(group_type)
+            if not group_by:
+                return
+
+            results = self.db_manager.get_group_statistics(group_by)
+
+            for i, (value, count) in enumerate(results, start=1):
+                self.groups_tree.insert("", tk.END, text=str(i), values=(str(value)[:80] if value else "N/A", count))
+
+            self.set_status(f"Groups ({group_by}): {len(results)} rows")
+        except Exception as e:
+            messagebox.showerror("Error", f"Analysis error: {str(e)}")
+    
+    def get_analytics(self, analytics_type):
+        """Backward-compatible wrapper for legacy analytics buttons."""
+        try:
+            self.notebook.select(self.reports_frame)
+        except Exception:
+            pass
+
+        if analytics_type == "max_duration":
+            self.run_top_durations()
+        elif analytics_type == "max_imei":
+            self.run_top_imeis()
+        elif analytics_type == "total_records":
+            self.run_summary()
+        elif analytics_type == "call_stats":
+            self.run_distribution("call_type")
+    
+    def view_all_records(self):
+        """View all database records"""
+        self._db_page = 0
+        self._run_db_page()
+
+    def _run_db_page(self):
+        try:
+            limit = max(1, self._safe_int(self.db_limit_var.get(), 500))
+            offset = self._db_page * limit
+
+            total = self.db_manager.count_records_advanced({})
+            self._db_total = total
+
+            rows = self.db_manager.search_records_advanced({}, limit=limit, offset=offset)
+
+            for item in self.db_tree.get_children():
+                self.db_tree.delete(item)
+
+            for row in rows:
+                dt = row[3] or ""
+                date_str = dt[:10] if dt else ""
+                time_str = dt[11:19] if dt else ""
+                self.db_tree.insert(
+                    "",
+                    tk.END,
+                    iid=str(row[0]),
+                    text=str(row[0]),
+                    values=(
+                        row[1] or "",
+                        row[2] or "",
+                        date_str,
+                        time_str,
+                        row[4] if row[4] is not None else "",
+                        row[5] or "",
+                        row[6] or "",
+                        row[7] or "",
+                        row[8] or "",
+                        row[9] or "",
+                        row[10] or "",
+                    ),
+                )
+
+            max_pages = max(1, (total + limit - 1) // limit)
+            self.db_page_var.set(f"Page {self._db_page + 1} / {max_pages}")
+            self.db_total_var.set(f"{total} records")
+            self.set_status(f"Database: {len(rows)} shown | Total: {total}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Error loading records: {str(e)}")
+
+    def db_prev_page(self):
+        if self._db_page <= 0:
+            return
+        self._db_page -= 1
+        self._run_db_page()
+
+    def db_next_page(self):
+        limit = max(1, self._safe_int(self.db_limit_var.get(), 500))
+        if (self._db_page + 1) * limit >= self._db_total:
+            return
+        self._db_page += 1
+        self._run_db_page()
+
+    def on_db_select(self, _event=None):
+        selected = self.db_tree.selection()
+        if not selected:
+            return
+        try:
+            record_id = int(selected[0])
+        except Exception:
+            return
+        self._populate_details(record_id, self.db_details_tree)
+    
+    def clear_database(self):
+        """Clear all database records"""
+        if messagebox.askyesno("Confirm", 
+                              "Are you sure you want to clear all database records?\n\nThis action cannot be undone!"):
+            try:
+                if self.db_manager.clear_all_records():
+                    messagebox.showinfo("Success", "Database cleared successfully!")
+                    self.refresh_ui()
+                    self.view_all_records()
+                else:
+                    messagebox.showerror("Error", "Failed to clear database")
+            except Exception as e:
+                messagebox.showerror("Error", f"Error clearing database: {str(e)}")
+    
+    def export_to_csv(self):
+        """Export database to CSV"""
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return
+        
+        try:
+            columns, rows = self.db_manager.export_to_list()
+            
+            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.writer(csvfile)
+                writer.writerow(columns)
+                writer.writerows(rows)
+            
+            messagebox.showinfo("Success", f"Exported {len(rows)} records to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Export error: {str(e)}")
+
+    def run_summary(self):
+        stats = self.db_manager.get_summary_stats()
+        for item in self.summary_tree.get_children():
+            self.summary_tree.delete(item)
+
+        if not stats:
+            self.set_status("Summary: no data")
+            return
+
+        for key in [
+            "total_records",
+            "unique_a_party",
+            "unique_b_party",
+            "unique_imei",
+            "unique_imsi",
+            "min_datetime",
+            "max_datetime",
+        ]:
+            if key not in stats:
+                continue
+            self.summary_tree.insert("", tk.END, text=key, values=(stats.get(key, ""),))
+
+        self.set_status("Summary refreshed")
+
+    def run_top_durations(self):
+        number = self.rp_dur_number.get().strip() or None
+        date_from = self.rp_dur_date_from.get().strip() or None
+        date_to = self.rp_dur_date_to.get().strip() or None
+        limit = max(1, self._safe_int(self.rp_dur_limit.get(), 50))
+
+        rows = self.db_manager.get_top_duration_records(limit=limit, number=number, date_from=date_from, date_to=date_to)
+        for item in self.top_duration_tree.get_children():
+            self.top_duration_tree.delete(item)
+
+        for i, row in enumerate(rows, start=1):
+            self.top_duration_tree.insert(
+                "",
+                tk.END,
+                text=str(i),
+                values=(
+                    row[1] or "",
+                    row[2] or "",
+                    row[3] or "",
+                    row[4] if row[4] is not None else "",
+                    row[5] or "",
+                    row[6] or "",
+                    row[7] or "",
+                    row[8] or "",
+                ),
+            )
+
+        self.set_status(f"Top Durations: {len(rows)} rows")
+
+    def run_top_imeis(self):
+        date_from = self.rp_imei_date_from.get().strip() or None
+        date_to = self.rp_imei_date_to.get().strip() or None
+        limit = max(1, self._safe_int(self.rp_imei_limit.get(), 50))
+
+        rows = self.db_manager.get_top_imeis(limit=limit, date_from=date_from, date_to=date_to)
+        for item in self.top_imei_tree.get_children():
+            self.top_imei_tree.delete(item)
+
+        for i, row in enumerate(rows, start=1):
+            self.top_imei_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0, row[2] or "", row[3] or ""))
+
+        self.set_status(f"Top IMEI: {len(rows)} rows")
+
+    def run_distribution(self, column: str):
+        column = (column or "").strip()
+        if column == "call_type":
+            date_from = self.rp_ct_date_from.get().strip() or None
+            date_to = self.rp_ct_date_to.get().strip() or None
+            limit = max(1, self._safe_int(self.rp_ct_limit.get(), 200))
+            tree = self.call_type_tree
+        elif column == "service_type":
+            date_from = self.rp_st_date_from.get().strip() or None
+            date_to = self.rp_st_date_to.get().strip() or None
+            limit = max(1, self._safe_int(self.rp_st_limit.get(), 200))
+            tree = self.service_type_tree
+        else:
+            return
+
+        rows = self.db_manager.get_distribution(column=column, limit=limit, date_from=date_from, date_to=date_to)
+        for item in tree.get_children():
+            tree.delete(item)
+
+        for i, row in enumerate(rows, start=1):
+            tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0))
+
+        self.set_status(f"{column} distribution: {len(rows)} rows")
+
+    def run_top_contacts(self):
+        number = self.tc_number.get().strip()
+        if not number:
+            messagebox.showwarning("Missing input", "Please enter a number.")
+            return
+        date_from = self.tc_date_from.get().strip() or None
+        date_to = self.tc_date_to.get().strip() or None
+        limit = max(1, self._safe_int(self.tc_limit.get(), 50))
+
+        rows = self.db_manager.get_top_contacts(number, date_from=date_from, date_to=date_to, limit=limit)
+        for item in self.top_contacts_tree.get_children():
+            self.top_contacts_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            self.top_contacts_tree.insert(
+                "",
+                tk.END,
+                text=str(i),
+                values=(row[0] or "", row[1] or 0, row[2] or 0, row[3] or "", row[4] or ""),
+            )
+        self.set_status(f"Top Contacts: {len(rows)} rows")
+
+    def run_mutual_contacts(self):
+        number_a = self.mc_number_a.get().strip()
+        number_b = self.mc_number_b.get().strip()
+        if not number_a or not number_b:
+            messagebox.showwarning("Missing input", "Please enter both Number A and Number B.")
+            return
+        date_from = self.mc_date_from.get().strip() or None
+        date_to = self.mc_date_to.get().strip() or None
+        limit = max(1, self._safe_int(self.mc_limit.get(), 100))
+
+        rows = self.db_manager.get_mutual_contacts_two_numbers(
+            number_a=number_a,
+            number_b=number_b,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        )
+        for item in self.mutual_contacts_tree.get_children():
+            self.mutual_contacts_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            self.mutual_contacts_tree.insert("", tk.END, text=str(i), values=row)
+        self.set_status(f"Mutual Contacts: {len(rows)} rows")
+
+    def run_direct_link(self):
+        number_a = self.dl_number_a.get().strip()
+        number_b = self.dl_number_b.get().strip()
+        if not number_a or not number_b:
+            messagebox.showwarning("Missing input", "Please enter both Number A and Number B.")
+            return
+
+        date_from = self.dl_date_from.get().strip() or None
+        date_to = self.dl_date_to.get().strip() or None
+        limit = max(1, self._safe_int(self.dl_limit.get(), 500))
+
+        summary = self.db_manager.get_direct_link_summary(number_a, number_b, date_from=date_from, date_to=date_to)
+        calls = self.db_manager.get_calls_between_numbers(number_a, number_b, date_from=date_from, date_to=date_to, limit=limit)
+        types = self.db_manager.get_call_type_distribution_for_pair(number_a, number_b, date_from=date_from, date_to=date_to, limit=100)
+
+        for item in self.direct_link_summary_tree.get_children():
+            self.direct_link_summary_tree.delete(item)
+
+        if summary:
+            for key in [
+                "total_calls",
+                "total_duration",
+                "a_to_b_calls",
+                "a_to_b_duration",
+                "b_to_a_calls",
+                "b_to_a_duration",
+                "first_dt",
+                "last_dt",
+            ]:
+                self.direct_link_summary_tree.insert("", tk.END, text=key, values=(summary.get(key, ""),))
+
+        for item in self.direct_link_calls_tree.get_children():
+            self.direct_link_calls_tree.delete(item)
+
+        for row in calls:
+            record_id = row[0]
+            dt = row[1] or ""
+            a_party = row[2] or ""
+            b_party = row[3] or ""
+            duration = row[4] if row[4] is not None else ""
+            call_type = row[5] or ""
+            service_type = row[6] or ""
+            imei = row[7] or ""
+            imsi = row[8] or ""
+            first_cgi = row[9] or ""
+            last_cgi = row[10] or ""
+
+            direction = "A→B" if (a_party == number_a and b_party == number_b) else "B→A"
+
+            self.direct_link_calls_tree.insert(
+                "",
+                tk.END,
+                iid=str(record_id),
+                text=str(record_id),
+                values=(dt, direction, duration, call_type, service_type, imei, imsi, first_cgi, last_cgi),
+            )
+
+        for item in self.direct_link_types_tree.get_children():
+            self.direct_link_types_tree.delete(item)
+
+        for i, row in enumerate(types, start=1):
+            self.direct_link_types_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0))
+
+        self.set_status(f"Direct Link: {len(calls)} calls | {len(types)} call types")
+
+    def run_timeline(self):
+        number = self.tl_number.get().strip()
+        if not number:
+            messagebox.showwarning("Missing input", "Please enter a number.")
+            return
+        date_from = self.tl_date_from.get().strip() or None
+        date_to = self.tl_date_to.get().strip() or None
+        group_by = self.tl_group_var.get().strip() or "day"
+        limit = max(1, self._safe_int(self.tl_limit.get(), 400))
+
+        rows = self.db_manager.get_number_timeline(
+            number=number,
+            date_from=date_from,
+            date_to=date_to,
+            group_by=group_by,
+            limit=limit,
+        )
+        for item in self.timeline_tree.get_children():
+            self.timeline_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            self.timeline_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0, row[2] or 0))
+        self.set_status(f"Timeline: {len(rows)} rows")
+
+    def run_numbers_by_imei(self):
+        imei = self.i2n_imei.get().strip()
+        if not imei:
+            messagebox.showwarning("Missing input", "Please enter an IMEI.")
+            return
+        limit = max(1, self._safe_int(self.i2n_limit.get(), 200))
+
+        rows = self.db_manager.get_numbers_by_imei(imei, limit=limit)
+        for item in self.imei_numbers_tree.get_children():
+            self.imei_numbers_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            self.imei_numbers_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0, row[2] or "", row[3] or ""))
+        self.set_status(f"IMEI → Numbers: {len(rows)} rows")
+
+    def run_imeis_by_number(self):
+        number = self.n2i_number.get().strip()
+        if not number:
+            messagebox.showwarning("Missing input", "Please enter a number.")
+            return
+        limit = max(1, self._safe_int(self.n2i_limit.get(), 200))
+
+        rows = self.db_manager.get_imeis_by_number(number, limit=limit)
+        for item in self.number_imei_tree.get_children():
+            self.number_imei_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            self.number_imei_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0, row[2] or "", row[3] or ""))
+        self.set_status(f"Number → IMEI: {len(rows)} rows")
+
+    def run_top_cgi(self, cgi_field: str):
+        number = self.cgi_number.get().strip() or None
+        date_from = self.cgi_date_from.get().strip() or None
+        date_to = self.cgi_date_to.get().strip() or None
+        limit = max(1, self._safe_int(self.cgi_limit.get(), 100))
+
+        rows = self.db_manager.get_top_cgi(
+            cgi_field=cgi_field,
+            number=number,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        )
+
+        target_tree = self.first_cgi_tree if cgi_field == "first_cgi" else self.last_cgi_tree
+        for item in target_tree.get_children():
+            target_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            target_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0))
+
+        self.set_status(f"Top {cgi_field}: {len(rows)} rows")
+
+    def run_numbers_on_cgi(self):
+        cgi_value = self.cgi_value.get().strip()
+        if not cgi_value:
+            messagebox.showwarning("Missing input", "Please enter a CGI search value.")
+            return
+        limit = max(1, self._safe_int(self.cgi_numbers_limit.get(), 200))
+
+        rows = self.db_manager.get_numbers_on_cgi(cgi_value, limit=limit)
+        for item in self.cgi_numbers_tree.get_children():
+            self.cgi_numbers_tree.delete(item)
+        for i, row in enumerate(rows, start=1):
+            self.cgi_numbers_tree.insert("", tk.END, text=str(i), values=(row[0] or "", row[1] or 0))
+        self.set_status(f"CGI → Numbers: {len(rows)} rows")
+    
+    def change_database(self):
+        """Change database file"""
+        db_path = filedialog.asksaveasfilename(
+            defaultextension=".db",
+            filetypes=[("Database files", "*.db"), ("All files", "*.*")]
+        )
+        if db_path:
+            self.db_path = db_path
+            self.db_manager = DatabaseManager(db_path)
+            messagebox.showinfo("Success", f"Database changed to: {db_path}")
+            self.refresh_ui()
+            self.view_all_records()
+
+
+def main():
+    """Main entry point"""
+    root = tk.Tk()
+    app = CDRAnalysisTool(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()

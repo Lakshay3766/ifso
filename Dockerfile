@@ -13,8 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Make the script executable (optional, since we're using python)
-# RUN chmod +x cdr_uploader.py
+# Note: This project is a Tkinter GUI app. Running the GUI inside Docker requires
+# additional setup (Tk libraries + display forwarding). For local usage, prefer:
+#   python3 main.py
 
-# Define the command to run the application
-CMD ["python", "cdr_uploader.py"]
+# Define the default command (kept for completeness)
+CMD ["python", "main.py"]
